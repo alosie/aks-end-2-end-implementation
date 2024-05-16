@@ -1,0 +1,44 @@
+# Use kubelogin to log into the cluster with SP
+# Add this into the steps for a pipeline that needs to deploy to
+# AKS using a non-interactive SP login
+# Requires the following variables:
+# kubeloginVersion - version of kubelogin to install (Ex v0.0.10)
+# aad_sp_client_id - client id for the service principal
+# aad_sp_client_secret - client secret for the service principal
+# aad_tenant_id - Azure AD tenant id for the service principal
+# kubernetesCluster - Name of the AKS cluster
+# azureResourceGroup - Name of the resource group containing the AKS cluster (NOT the MC resource group)
+
+      - bash: |
+
+          # Download and install
+          curl -LO "https://github.com/Azure/kubelogin/releases/download/$(kubeloginVersion)/kubelogin-linux-amd64.zip"
+          sudo unzip -j "kubelogin-linux-amd64.zip" -d /usr/local/bin
+          rm -f "kubelogin-linux-amd64.zip"
+          kubelogin --version
+        displayName: kubelogin - install
+
+      - bash: |
+          # Log in using stored SP
+          az login \
+            --service-principal \
+            --username $(aad_sp_client_id) \
+            --password $(aad_sp_client_secret) \
+            --tenant $(aad_tenant_id)
+
+          # Create the kubeconfig file with name of AKS cluster
+          touch .kubeconfig-$(kubernetesCluster)
+          chmod 600 .kubeconfig-$(kubernetesCluster)
+
+          # Get credentials using AAD non-interactive login
+          az aks get-credentials \
+            --resource-group $(azureResourceGroup) \
+            --name $(kubernetesCluster) \
+            --overwrite-existing \
+            --file .kubeconfig-$(kubernetesCluster)
+
+          # Convert the credentials using the azure cli option
+          kubelogin convert-kubeconfig -l azurecli
+        displayName: create kubelogin file with azurecli
+        env:
+          KUBECONFIG: $(Build.SourcesDirectory)/.kubeconfig-$(kubernetesCluster)
